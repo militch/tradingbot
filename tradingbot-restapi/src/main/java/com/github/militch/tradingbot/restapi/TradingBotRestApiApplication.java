@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
 
 import java.util.Timer;
 
@@ -18,18 +17,21 @@ public class TradingBotRestApiApplication implements CommandLineRunner {
     private static final Timer mainTimer = new Timer();
     private final TradeTrackingTask trackingTask;
 
+    private final BinanceClient binanceClient;
 
     public static void main(String[] args) {
         SpringApplication.run(TradingBotRestApiApplication.class, args);
     }
 
-    public TradingBotRestApiApplication(TradeTrackingTask trackingTask) {
+    public TradingBotRestApiApplication(TradeTrackingTask trackingTask, BinanceClient binanceClient) {
         this.trackingTask = trackingTask;
+        this.binanceClient = binanceClient;
     }
 
     @Override
     public void run(String... args) throws Exception {
         logger.info("run start");
+        binanceClient.openStream();
         mainTimer.schedule(trackingTask, 0, 1000);
     }
 }

@@ -9,7 +9,6 @@ import org.apache.logging.log4j.Logger;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
-import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +23,8 @@ public class BinanceClient {
     private final String secretKey;
 
     public static final String DEFAULT_API_ENDPOINT = "https://api.binance.com";
+    public static final String DEFAULT_STREAM_ENDPOINT = "wss://stream.binance.com";
+    public static final String DATA_STREAM_ENDPOINT = "wss://data-stream.binance.com";
     private final OkHttpClient client;
     private final static Gson g = new Gson();
 
@@ -133,6 +134,14 @@ public class BinanceClient {
             logger.warn("Failed request: ", e);
             return null;
         }
+    }
+    public BinanceStreamListener openStream(){
+        BinanceSession session = new BinanceSession();
+        BinanceStreamListener listener = new BinanceStreamListener();
+        Request request = new Request.Builder().url(DATA_STREAM_ENDPOINT + "/ws").build();
+        //Request request = new Request.Builder().url(DEFAULT_STREAM_ENDPOINT+"/ws").build();
+        client.newWebSocket(request, listener);
+        return listener;
     }
 
 }
