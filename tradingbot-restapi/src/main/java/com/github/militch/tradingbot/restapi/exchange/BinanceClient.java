@@ -21,9 +21,10 @@ public class BinanceClient {
     private final String apiEndpoint;
     private final String apiKey;
     private final String secretKey;
+    private WebSocket webSocket;
 
     public static final String DEFAULT_API_ENDPOINT = "https://api.binance.com";
-    public static final String DEFAULT_STREAM_ENDPOINT = "wss://stream.binance.com";
+    private static final String DEFAULT_STREAM_ENDPOINT = "wss://stream.binance.com";
     public static final String DATA_STREAM_ENDPOINT = "wss://data-stream.binance.com";
     private final OkHttpClient client;
     private final static Gson g = new Gson();
@@ -43,17 +44,13 @@ public class BinanceClient {
         this.secretKey = secretKey;
         this.apiEndpoint = apiEndpoint;
         SocketAddress sa = new InetSocketAddress("127.0.0.1",1081);
-        Proxy httpProxy = new Proxy(Proxy.Type.HTTP, sa);
+        Proxy httpProxy = new Proxy(Proxy.Type.SOCKS, sa);
         client = new OkHttpClient.Builder()
                 .proxy(httpProxy)
                 .build();
     }
 
 
-    public boolean ping(){
-        String data = doRequestGetJsonString("/api/v3/ping", null);
-        return data != null && data.equals("{}");
-    }
     public long getTime() {
         Map<String, String> data = doReuqestGetStringMap("/api/v3/time");
         if (data == null) { return 0; }
@@ -135,13 +132,56 @@ public class BinanceClient {
             return null;
         }
     }
-    public BinanceStreamListener openStream(){
-        BinanceSession session = new BinanceSession();
-        BinanceStreamListener listener = new BinanceStreamListener();
-        Request request = new Request.Builder().url(DATA_STREAM_ENDPOINT + "/ws").build();
-        //Request request = new Request.Builder().url(DEFAULT_STREAM_ENDPOINT+"/ws").build();
-        client.newWebSocket(request, listener);
-        return listener;
+
+    private long timeout;
+
+    public void setTimeout(long timeout) {
+        this.timeout = timeout;
     }
 
+    private boolean sendRequest(SteamRequest request){
+        Map<String, Object> map = new HashMap<>();
+        map.put("method", request.getMethod());
+        map.put("params", request.getParams());
+        map.put("id", request.getId());
+        String jsonString = g.toJson(map);
+        return webSocket.send(jsonString);
+    }
+    private StreamResponse streamRequest(String method, String[] params) {
+        connect();
+        SteamRequest req = SteamRequest.create();
+        req.setMethod(method);
+        req.setParams(params);
+        if(!sendRequest(req)){
+            return null;
+        }
+        ResponseFuture future = new ResponseFuture(req, timeout);
+        return future.waitResponse();
+    }
+    private SteamHandler steamHandler;
+
+    public void setSteamHandler(SteamHandler steamHandler) {
+        this.steamHandler = steamHandler;
+    }
+    public void subscribe(String... params){
+
+    }
+    public void ping(){
+        StreamResponse resp = streamRequest("ping", null);
+    }
+    public void connect() {
+        if (webSocket == null) {
+            StreamListener listener = new StreamListener(this);
+            Request request = new Request.Builder().url(DATA_STREAM_ENDPOINT + "/ws").build();
+            webSocket =  client.newWebSocket(request, listener);
+        }
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public String getSecretKey() {
+        return secretKey;
+    }
 }

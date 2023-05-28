@@ -1,6 +1,7 @@
 package com.github.militch.tradingbot.restapi;
 
 import com.github.militch.tradingbot.restapi.exchange.BinanceClient;
+import com.github.militch.tradingbot.restapi.exchange.SteamHandler;
 import org.mybatis.spring.annotation.MapperScan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,20 +19,25 @@ public class TradingBotRestApiApplication implements CommandLineRunner {
     private final TradeTrackingTask trackingTask;
 
     private final BinanceClient binanceClient;
+    private final SteamHandler steamHandler;
 
     public static void main(String[] args) {
         SpringApplication.run(TradingBotRestApiApplication.class, args);
     }
 
-    public TradingBotRestApiApplication(TradeTrackingTask trackingTask, BinanceClient binanceClient) {
+    public TradingBotRestApiApplication(
+            TradeTrackingTask trackingTask,
+            BinanceClient binanceClient,
+            SteamHandler steamHandler
+    ) {
         this.trackingTask = trackingTask;
         this.binanceClient = binanceClient;
+        this.steamHandler = steamHandler;
     }
 
     @Override
     public void run(String... args) throws Exception {
-        logger.info("run start");
-        binanceClient.openStream();
+        binanceClient.subscribe("abc");
         mainTimer.schedule(trackingTask, 0, 1000);
     }
 }

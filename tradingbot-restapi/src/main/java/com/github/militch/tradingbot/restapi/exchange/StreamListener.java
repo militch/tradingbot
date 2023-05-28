@@ -15,35 +15,21 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-public class BinanceStreamListener extends WebSocketListener {
-    private static Logger logger = LoggerFactory.getLogger(BinanceStreamListener.class);
+public class StreamListener extends WebSocketListener {
+    private static Logger logger = LoggerFactory.getLogger(StreamListener.class);
     private static Gson g = new Gson();
-
-    public void subscribe(String name, SubscribeCallback callback){
+    private BinanceClient client;
+    public StreamListener(BinanceClient client){
+        this.client = client;
     }
 
-    private static boolean jsonRequest(WebSocket webSocket, long id, String method, String[] params){
-        Map<String, Object> map = new HashMap<>();
-        map.put("method", method);
-        map.put("params", params);
-        map.put("id", id);
-        String jsonString = g.toJson(map);
-        return webSocket.send(jsonString);
-    }
-
-    private static boolean requestSubscribe(WebSocket webSocket, String[] params){
-        return jsonRequest(webSocket, 1, "SUBSCRIBE", params);
-    }
     @Override
     public void onOpen(@NotNull WebSocket webSocket, @NotNull Response response) {
-        logger.info("onOpen");
-        //requestSubscribe(webSocket, new String[] {"btcusdt@kline_1m"});
-        requestSubscribe(webSocket, new String[] {"btcusdt@trade"});
+        //client.requestSubscribe(new String[]{"btcusdt@trade"});
     }
 
     @Override
     public void onMessage(@NotNull WebSocket webSocket, @NotNull String text) {
-
         logger.info("onMsg: {}", text);
     }
 
