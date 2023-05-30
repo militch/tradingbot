@@ -2,6 +2,7 @@ package com.github.militch.tradingbot.restapi.exchange;
 
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
+import lombok.extern.log4j.Log4j2;
 import okhttp3.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -11,22 +12,28 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.SocketAddress;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+@Log4j2
 public class BinanceClient {
 
-    private static final Logger logger = LogManager.getLogger();
     private final String apiEndpoint;
     private final String apiKey;
     private final String secretKey;
     private WebSocket webSocket;
+    private CountDownLatch countDownLatch = new CountDownLatch(1);
 
     public static final String DEFAULT_API_ENDPOINT = "https://api.binance.com";
     private static final String DEFAULT_STREAM_ENDPOINT = "wss://stream.binance.com";
     public static final String DATA_STREAM_ENDPOINT = "wss://data-stream.binance.com";
     private final OkHttpClient client;
+
     private final static Gson g = new Gson();
 
     public BinanceClient(){
@@ -43,7 +50,7 @@ public class BinanceClient {
         this.apiKey = apiKey;
         this.secretKey = secretKey;
         this.apiEndpoint = apiEndpoint;
-        SocketAddress sa = new InetSocketAddress("127.0.0.1",1081);
+        SocketAddress sa = new InetSocketAddress("127.0.0.1",1080);
         Proxy httpProxy = new Proxy(Proxy.Type.SOCKS, sa);
         client = new OkHttpClient.Builder()
                 .proxy(httpProxy)
@@ -119,7 +126,7 @@ public class BinanceClient {
                 if (rb != null){
                     body = rb.string();
                 }
-                logger.warn("Failed request: status({}) body: {}", response.code(), body);
+                log.warn("Failed request: status({}) body: {}", response.code(), body);
                 return null;
             }
             ResponseBody rb = response.body();
@@ -128,7 +135,7 @@ public class BinanceClient {
             }
             return rb.string();
         }catch (IOException e) {
-            logger.warn("Failed request: ", e);
+            log.warn("Failed request: ", e);
             return null;
         }
     }
@@ -145,17 +152,31 @@ public class BinanceClient {
         map.put("params", request.getParams());
         map.put("id", request.getId());
         String jsonString = g.toJson(map);
+        log.info("send stream request: {}", jsonString);
         return webSocket.send(jsonString);
     }
-    private StreamResponse streamRequest(String method, String[] params) {
+
+    private final Map<Integer, ResponseFuture> pending = new LinkedHashMap<>();
+    private final Lock pendingLock = new ReentrantLock();
+    private StreamResponse streamRequest(String method, String[] params) throws Exception {
         connect();
         SteamRequest req = SteamRequest.create();
         req.setMethod(method);
         req.setParams(params);
-        if(!sendRequest(req)){
-            return null;
+        if (timeout == 0) {
+            timeout = 30000;
         }
         ResponseFuture future = new ResponseFuture(req, timeout);
+        int id = req.getId();
+        try {
+            pendingLock.lock();
+            pending.put(id, future);
+        }finally {
+            pendingLock.unlock();
+        }
+        if(!sendRequest(req)){
+            throw new Exception("Failed send request");
+        }
         return future.waitResponse();
     }
     private SteamHandler steamHandler;
@@ -163,18 +184,58 @@ public class BinanceClient {
     public void setSteamHandler(SteamHandler steamHandler) {
         this.steamHandler = steamHandler;
     }
-    public void subscribe(String... params){
-
+    public void subscribe(String... params) throws Exception {
+        StreamResponse resp = streamRequest("SUBSCRIBE", params);
+        StreamError error = resp.getError();
+        if (error != null) {
+            throw new Exception(error.getMsg());
+        }
     }
-    public void ping(){
+    public void ping() throws Exception {
         StreamResponse resp = streamRequest("ping", null);
     }
-    public void connect() {
+    public void handleRequestMessage(StreamResponse response){
+        try {
+            int id = response.getId();
+            pendingLock.lock();
+            if (!pending.containsKey(id)) {
+                pendingLock.unlock();
+                return;
+            }
+            ResponseFuture rf = pending.get(id);
+            rf.process(response);
+        }finally {
+            pendingLock.unlock();
+        }
+    }
+    public void handleEvent(BinanceEvent event){
+        if (steamHandler == null) {
+            return;
+        }
+        if (event instanceof BinanceTradeEvent) {
+            steamHandler.onTrade((BinanceTradeEvent) event);
+        }
+    }
+    public void connect() throws InterruptedException {
         if (webSocket == null) {
             StreamListener listener = new StreamListener(this);
             Request request = new Request.Builder().url(DATA_STREAM_ENDPOINT + "/ws").build();
             webSocket =  client.newWebSocket(request, listener);
         }
+        if (countDownLatch.getCount() > 0) {
+            countDownLatch.await();
+        }
+    }
+    public void handleClose(){
+        if (webSocket != null) {
+            webSocket = null;
+        }
+        if (countDownLatch.getCount() == 0) {
+            countDownLatch = new CountDownLatch(1);
+        }
+    }
+    public void connectDone(){
+        countDownLatch.countDown();
     }
 
     public String getApiKey() {

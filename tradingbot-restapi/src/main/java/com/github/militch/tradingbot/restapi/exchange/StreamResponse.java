@@ -6,4 +6,5 @@ import lombok.Data;
 public class StreamResponse {
     private Integer id;
     private String result;
+    private StreamError error;
 }

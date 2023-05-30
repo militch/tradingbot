@@ -37,7 +37,7 @@ public class TradingBotRestApiApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        binanceClient.subscribe("abc");
         mainTimer.schedule(trackingTask, 0, 1000);
+        binanceClient.subscribe("btcusdt@trade");
     }
 }
